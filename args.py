@@ -49,6 +49,9 @@ class SynapticArgs:
     # noise strength
     sigma: float
 
+    # synaptic weight strength
+    up_down_strength_ratio: float
+
 
 @dataclasses.dataclass
 class SimulationArgs:
@@ -61,4 +64,4 @@ class SimulationArgs:
     spike_rate: float
     pre_post_delay: float
 
-    rho_init: float
+    down_init_probability: float

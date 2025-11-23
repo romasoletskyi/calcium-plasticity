@@ -1,4 +1,5 @@
 import copy
+from pathlib import Path
 
 import fire
 import matplotlib.pyplot as plt
@@ -12,7 +13,7 @@ from utils import extract_unique
 
 def run(
     args_list: list[SimulationArgs], num_runs: int
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     # scalar parameters
     simulation_time = extract_unique([args.simulation_time for args in args_list])
     step_time = extract_unique([args.step_time for args in args_list])
@@ -33,16 +34,17 @@ def run(
     sigma = np.array([args.synapse.sigma for args in args_list])
 
     pre_post_delay = np.array([args.pre_post_delay for args in args_list])
+    down_init_probability = np.array([args.down_init_probability for args in args_list])
 
     # starting values and logging
     calcium = np.zeros((num_runs, len(args_list)))
-    rho = np.tile(np.array([args.rho_init for args in args_list]), (num_runs, 1))
+    rho_init = np.arange(0, 1, 1 / num_runs)[:, None] >= down_init_probability[None, :]
+    rho = np.asarray(rho_init, dtype=float)
 
     rng = np.random.default_rng()
     time = np.arange(0, simulation_time, step_time)
-    noise = rng.normal(size=time.shape)
 
-    for t, eps in tqdm(zip(time, noise, strict=True)):
+    for t in tqdm(time):
         pre_spike_phase = np.modf((t - D) * spike_rate)[0]
         is_pre_spike = (0 <= pre_spike_phase) & (
             pre_spike_phase < step_time * spike_rate
@@ -70,7 +72,7 @@ def run(
         ) + (
             # noise part
             sigma
-            * eps
+            * rng.normal(size=rho.shape)
             * (calcium > np.minimum(theta_d, theta_d))
             * (step_time / tau) ** (1 / 2)
         )
@@ -78,16 +80,21 @@ def run(
         calcium += dcalcium
         rho += drho
 
-    return calcium, rho
+    rho_final = rho > rho_star
+    return rho_init, rho, rho_final
 
 
 def main(
     config_name: str,
+    run_name: str,
     pre_post_delay_min: float = -100,
     pre_post_delay_max: float = 100.1,
     pre_post_delay_step: float = 5,
-    num_runs: int = 1000,
+    num_runs: int = 100,
 ) -> None:
+    run_path = Path(__file__).parent / "runs" / run_name
+    run_path.mkdir(exist_ok=True, parents=True)
+
     default_args = FigConfig[config_name]
     args_list: list[SimulationArgs] = []
 
@@ -99,15 +106,43 @@ def main(
         args.pre_post_delay = pre_post_delay
         args_list.append(args)
 
-    _, rho = run(args_list, num_runs)  # [num_runs, num_args]
-    rho_asymptote = np.mean(rho, axis=0)
+    rho_init, rho, rho_final = run(args_list, num_runs)
+    np.save(run_path / "rho_init.npy", rho_init)
+    np.save(run_path / "rho.npy", rho)
+    np.save(run_path / "rho_final.npy", rho_final)
 
-    plt.plot(pre_post_delays, rho_asymptote)
+    up_down_strength_ratio = np.array(
+        [args.synapse.up_down_strength_ratio for args in args_list]
+    )
+
+    init_strength = np.mean(1 + rho_init * (up_down_strength_ratio - 1), axis=0)
+    final_strength = np.mean(1 + rho_final * (up_down_strength_ratio - 1), axis=0)
+    std_strength = (up_down_strength_ratio - 1) * np.sqrt(
+        (
+            np.std(rho_final[rho_init]) ** 2 * np.mean(rho_init)
+            + np.std(rho_final[~rho_init]) ** 2 * np.mean(~rho_init)
+        )
+        / num_runs
+    )
+
+    plt.plot(pre_post_delays, final_strength / init_strength, "o-", color="b")
+    plt.fill_between(
+        pre_post_delays,
+        (final_strength - std_strength) / init_strength,
+        (final_strength + std_strength) / init_strength,
+        color="b",
+        alpha=0.3,
+    )
+
+    plt.xlabel("post-pre delay, ms")
+    plt.ylabel("synaptic strength change")
+
+    plt.savefig(run_path / f"fig2_{config_name}.png", dpi=300)
     plt.show()
 
 
 if __name__ == "__main__":
     """
-    python -m simulation --config_name DP
+    python -m simulation --config_name DP --run_name dt0.1_runs100
     """
     fire.Fire(main)
