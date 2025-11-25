@@ -1,4 +1,4 @@
-from args import CalciumArgs, SimulationArgs, SynapticArgs
+from args import CalciumArgs, NeuronArgs, SimulationArgs, SynapticArgs
 
 FigConfig: dict[str, SimulationArgs] = {
     "DP": SimulationArgs(
@@ -17,11 +17,13 @@ FigConfig: dict[str, SimulationArgs] = {
             theta_p=1.3,
             sigma=2.8284,
             up_down_strength_ratio=5,
+            down_init_probability=0.5,
+        ),
+        neuron=NeuronArgs(
+            spike_rate=0.001,
+            pre_post_delay=0,
         ),
         simulation_time=60_000,
         step_time=0.1,
-        spike_rate=0.001,
-        pre_post_delay=0,
-        down_init_probability=0.5,
     )
 }

@@ -4,83 +4,64 @@ from pathlib import Path
 import fire
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
 from tqdm import tqdm
 
 from args import SimulationArgs
 from config import FigConfig
-from utils import extract_unique
 
 
 def run(
-    args_list: list[SimulationArgs], num_runs: int
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    # scalar parameters
-    simulation_time = extract_unique([args.simulation_time for args in args_list])
-    step_time = extract_unique([args.step_time for args in args_list])
-    spike_rate = extract_unique([args.spike_rate for args in args_list])
+    args: SimulationArgs, num_runs: int
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    assert isinstance(args.calcium.D, torch.Tensor)
+    assert isinstance(args.synapse.down_init_probability, torch.Tensor)
+    assert isinstance(args.synapse.theta_p, torch.Tensor)
+    assert isinstance(args.synapse.theta_d, torch.Tensor)
+    assert isinstance(args.neuron.spike_rate, torch.Tensor)
+    assert isinstance(args.neuron.pre_post_delay, torch.Tensor)
 
-    # vector parameters
-    tau_ca = np.array([args.calcium.tau_ca for args in args_list])
-    c_pre = np.array([args.calcium.c_pre for args in args_list])
-    c_post = np.array([args.calcium.c_post for args in args_list])
-    D = np.array([args.calcium.D for args in args_list])
+    calcium = torch.zeros((num_runs, len(args.calcium)))
+    rho_init = (
+        torch.arange(0, 1, 1 / num_runs)[:, None]
+        >= args.synapse.down_init_probability[None, :]
+    )
+    rho = rho_init.float()
 
-    tau = np.array([args.synapse.tau for args in args_list])
-    rho_star = np.array([args.synapse.rho_star for args in args_list])
-    gamma_p = np.array([args.synapse.gamma_p for args in args_list])
-    gamma_d = np.array([args.synapse.gamma_d for args in args_list])
-    theta_p = np.array([args.synapse.theta_p for args in args_list])
-    theta_d = np.array([args.synapse.theta_d for args in args_list])
-    sigma = np.array([args.synapse.sigma for args in args_list])
+    num_steps = int(args.simulation_time // args.step_time)
+    spike_step_period = (1 / (args.step_time * args.neuron.spike_rate)).long()
+    pre_spike_shift = (args.calcium.D // args.step_time).long()
+    post_spike_shift = (args.neuron.pre_post_delay // args.step_time).long()
 
-    pre_post_delay = np.array([args.pre_post_delay for args in args_list])
-    down_init_probability = np.array([args.down_init_probability for args in args_list])
-
-    # starting values and logging
-    calcium = np.zeros((num_runs, len(args_list)))
-    rho_init = np.arange(0, 1, 1 / num_runs)[:, None] >= down_init_probability[None, :]
-    rho = np.asarray(rho_init, dtype=float)
-
-    rng = np.random.default_rng()
-    time = np.arange(0, simulation_time, step_time)
-
-    for t in tqdm(time):
-        pre_spike_phase = np.modf((t - D) * spike_rate)[0]
-        is_pre_spike = (0 <= pre_spike_phase) & (
-            pre_spike_phase < step_time * spike_rate
-        )
-
-        post_spike_phase = np.modf((t - pre_post_delay) * spike_rate)[0]
-        is_post_spike = (0 <= post_spike_phase) & (
-            post_spike_phase < step_time * spike_rate
-        )
-
+    for step_idx in tqdm(range(num_steps)):
+        is_pre_spike = (step_idx - pre_spike_shift) % spike_step_period == 0
+        is_post_spike = (step_idx - post_spike_shift) % spike_step_period == 0
         dcalcium = (
-            -calcium * step_time / tau_ca
-            + c_pre * is_pre_spike
-            + c_post * is_post_spike
+            -calcium * args.step_time / args.calcium.tau_ca
+            + args.calcium.c_pre * is_pre_spike
+            + args.calcium.c_post * is_post_spike
         )
 
         drho = (
             # deterministic part
             (
-                -rho * (1 - rho) * (rho_star - rho)
-                + gamma_p * (1 - rho) * (calcium > theta_p)
-                - gamma_d * rho * (calcium > theta_d)
+                -rho * (1 - rho) * (args.synapse.rho_star - rho)
+                + args.synapse.gamma_p * (1 - rho) * (calcium > args.synapse.theta_p)
+                - args.synapse.gamma_d * rho * (calcium > args.synapse.theta_d)
             )
-            * (step_time / tau)
+            * (args.step_time / args.synapse.tau)
         ) + (
             # noise part
-            sigma
-            * rng.normal(size=rho.shape)
-            * (calcium > np.minimum(theta_d, theta_d))
-            * (step_time / tau) ** (1 / 2)
+            args.synapse.sigma
+            * torch.normal(0, 1, size=rho.shape)
+            * (calcium > torch.minimum(args.synapse.theta_p, args.synapse.theta_d))
+            * (args.step_time / args.synapse.tau) ** (1 / 2)
         )
 
         calcium += dcalcium
         rho += drho
 
-    rho_final = rho > rho_star
+    rho_final = rho > args.synapse.rho_star
     return rho_init, rho, rho_final
 
 
@@ -103,24 +84,27 @@ def main(
     )
     for pre_post_delay in pre_post_delays:
         args = copy.deepcopy(default_args)
-        args.pre_post_delay = pre_post_delay
+        args.neuron.pre_post_delay = pre_post_delay
         args_list.append(args)
 
-    rho_init, rho, rho_final = run(args_list, num_runs)
-    np.save(run_path / "rho_init.npy", rho_init)
-    np.save(run_path / "rho.npy", rho)
-    np.save(run_path / "rho_final.npy", rho_final)
+    args = SimulationArgs.batch(args_list)
+    rho_init, rho, rho_final = run(args, num_runs)
+    torch.save(rho_init, run_path / "rho_init.pt")
+    torch.save(rho, run_path / "rho.pt")
+    torch.save(rho_final, run_path / "rho_final.pt")
 
-    up_down_strength_ratio = np.array(
-        [args.synapse.up_down_strength_ratio for args in args_list]
+    init_strength = torch.mean(
+        1 + rho_init * (args.synapse.up_down_strength_ratio - 1), dim=0
     )
-
-    init_strength = np.mean(1 + rho_init * (up_down_strength_ratio - 1), axis=0)
-    final_strength = np.mean(1 + rho_final * (up_down_strength_ratio - 1), axis=0)
-    std_strength = (up_down_strength_ratio - 1) * np.sqrt(
+    final_strength = torch.mean(
+        1 + rho_final * (args.synapse.up_down_strength_ratio - 1), dim=0
+    )
+    std_strength = (args.synapse.up_down_strength_ratio - 1) * torch.sqrt(
         (
-            np.std(rho_final[rho_init]) ** 2 * np.mean(rho_init)
-            + np.std(rho_final[~rho_init]) ** 2 * np.mean(~rho_init)
+            torch.std(rho_final[rho_init].float(), dim=0) ** 2
+            * rho_init.float().mean(dim=0)
+            + torch.std(rho_final[~rho_init].float(), dim=0) ** 2
+            * (~rho_init).float().mean(dim=0)
         )
         / num_runs
     )
