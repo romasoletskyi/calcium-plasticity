@@ -12,5 +12,4 @@ dependencies = [
     "tqdm",
     "torchvision",
     "brian2",
-    "progressbar",
 ]
