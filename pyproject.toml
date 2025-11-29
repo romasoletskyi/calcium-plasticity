@@ -1,0 +1,16 @@
+[project]
+name = "calcium-plasticity"
+version = "0.1.0"
+description = "Implementation of paper 'Calcium-based plasticity model explains sensitivity of synaptic changes to spike pattern, rate, and dendritic location', M. Graupner, & N. Brunel,"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy",
+    "torch",
+    "fire",
+    "matplotlib",
+    "tqdm",
+    "torchvision",
+    "brian2",
+    "progressbar",
+]
