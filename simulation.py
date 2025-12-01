@@ -1,5 +1,4 @@
 import copy
-from pathlib import Path
 
 import fire
 import matplotlib.pyplot as plt
@@ -9,6 +8,7 @@ from tqdm import tqdm
 
 from args import SimulationArgs
 from config import FigConfig
+from utils import get_run_path
 
 
 def run(
@@ -73,7 +73,7 @@ def main(
     pre_post_delay_step: float = 5,
     num_runs: int = 100,
 ) -> None:
-    run_path = Path(__file__).parent / "runs" / run_name
+    run_path = get_run_path(run_name)
     run_path.mkdir(exist_ok=True, parents=True)
 
     default_args = FigConfig[config_name]

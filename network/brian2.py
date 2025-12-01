@@ -25,6 +25,8 @@ from brian2 import (
 )
 from tqdm import tqdm
 
+from utils import get_run_path
+
 # Number of training, observation, and testing samples
 N_TRAIN = 25_000
 N_OBSERVE = 2_000
@@ -48,10 +50,6 @@ W_EXC_INH = 10.4
 W_INH_EXC = 17.0
 
 
-def get_run_path(run_name: str) -> Path:
-    return Path(__file__).parent.parent / "runs" / run_name
-
-
 def save_npy(arr, path):
     arr = np.array(arr)
     print("%-9s %-15s => %-30s" % ("Saving", arr.shape, path))
@@ -71,13 +69,16 @@ def read_mnist(run_path: Path, training: bool) -> tuple[np.ndarray, np.ndarray]:
     images = open(mnist_path / ("%s-images-idx3-ubyte" % tag), "rb")
     images.read(4)
     n_images = unpack(">I", images.read(4))[0]
-    _n_rows = unpack(">I", images.read(4))[0]
-    _n_cols = unpack(">I", images.read(4))[0]
+    n_rows = unpack(">I", images.read(4))[0]
+    n_cols = unpack(">I", images.read(4))[0]
+    assert n_rows == n_cols and n_rows * n_cols == N_INP, (n_rows, n_cols)
 
     labels = open(mnist_path / ("%s-labels-idx1-ubyte" % tag), "rb")
     labels.read(4)
-    x = np.frombuffer(images.read(), dtype=np.uint8)
-    x = x.reshape(n_images, -1) / 8.0
+    n_labels = unpack(">I", labels.read(4))[0]
+    assert n_images == n_labels, (n_images, n_labels)
+
+    x = np.frombuffer(images.read(), dtype=np.uint8).reshape(n_images, -1) / 8.0
     y = np.frombuffer(labels.read(), dtype=np.uint8)
     return x, y
 
@@ -203,6 +204,7 @@ def predict(groups, rates):
 def test(run_name: str) -> None:
     run_path = get_run_path(run_name)
     data_path = run_path / "data"
+    data_path.mkdir(exist_ok=True, parents=True)
 
     conf = np.zeros((10, 10))
     assign = np.load(data_path / "assign.npy")
@@ -249,6 +251,7 @@ def stats(net):
 def train(run_name: str) -> None:
     run_path = get_run_path(run_name)
     data_path = run_path / "data"
+    data_path.mkdir(exist_ok=True, parents=True)
 
     X, Y = read_mnist(run_path, True)
     n_samples = X.shape[0]
@@ -274,6 +277,7 @@ def train(run_name: str) -> None:
 def observe(run_name: str) -> None:
     run_path = get_run_path(run_name)
     data_path = run_path / "data"
+    data_path.mkdir(exist_ok=True, parents=True)
 
     X, Y = read_mnist(run_path, True)
     n_samples = X.shape[0]
@@ -301,6 +305,7 @@ def observe(run_name: str) -> None:
 def plot(run_name: str) -> None:
     run_path = get_run_path(run_name)
     data_path = run_path / "data"
+    data_path.mkdir(exist_ok=True, parents=True)
 
     conf = np.load(data_path / "confusion.npy")
 
