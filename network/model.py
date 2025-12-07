@@ -73,3 +73,9 @@ class NeuronGroup:
         )
         self.voltage = self.args.v_rest * spike_mask + self.voltage * (1 - spike_mask)
         self.theta += self.args.theta_spike * spike_mask
+
+class Synapses:
+    def __init__(self, source: NeuronGroup, target: NeuronGroup, weights: torch.Tensor) -> None:
+        self.source = source
+        self.target = target
+        self.weights = weights
