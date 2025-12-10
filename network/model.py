@@ -39,7 +39,7 @@ class NeuronGroup(SpikingGroup):
         self.g_exc = torch.zeros(size)
         self.g_inh = torch.zeros(size)
         self.theta = theta
-        self.timer = torch.zeros(size)
+        self.timer = self.args.spike_refractory_threshold * torch.ones(size)
 
     def step(self) -> None:
         # TODO: renormalise g_exc, g_inh to be outside of tau
@@ -62,9 +62,8 @@ class NeuronGroup(SpikingGroup):
 
         # Reset voltage and increase firing threshold after spike
         self.spike_mask = (self.voltage > self.theta + self.args.theta_shift) & (
-            self.timer > max(self.args.v_refractory, self.args.timer_refractory or 0.0)
+            self.timer > self.args.spike_refractory_threshold
         )
-        assert not torch.isnan(self.voltage).any(), (self.g_exc, self.g_inh)
         self.voltage = (
             self.args.v_reset * self.spike_mask + self.voltage * ~self.spike_mask
         )
@@ -118,7 +117,8 @@ def build_network(args: NetworkArgs, run_path: Path) -> Network:
         step_time=args.step_time,
     )
 
-    theta = torch.tensor(np.load(data_path / "theta.npy"), dtype=torch.float)
+    # theta is stored in volts
+    theta = torch.tensor(1000 * np.load(data_path / "theta.npy"), dtype=torch.float)
     ng_exc = NeuronGroup(
         NeuronConfig["EXC"],
         size=size,

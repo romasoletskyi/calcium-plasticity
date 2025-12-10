@@ -33,6 +33,10 @@ class NeuronArgs:
     v_refractory: float
     timer_refractory: float | None
 
+    @property
+    def spike_refractory_threshold(self) -> float:
+        return max(self.v_refractory, self.timer_refractory or 0.0)
+
 
 @dataclass
 class NetworkArgs:

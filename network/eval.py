@@ -48,7 +48,7 @@ def eval(run_name: str) -> None:
 
     args = EvalArgs(
         num_classes=10,
-        num_samples=1,
+        num_samples=1000,
         stimulation_time=350,
         rest_time=150,
         spike_threshold=0,
