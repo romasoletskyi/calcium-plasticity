@@ -13,3 +13,8 @@ dependencies = [
     "torchvision",
     "brian2",
 ]
+
+[dependency-groups]
+dev = [
+    "ty>=0.0.1a33",
+]

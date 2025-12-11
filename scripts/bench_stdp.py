@@ -4,7 +4,7 @@ import numpy as np
 from tqdm import tqdm
 
 
-def main() -> None:
+def simulate() -> None:
     simulation_time = 600_000
     step_time = 1
     spike_rate = 0.005
@@ -69,5 +69,46 @@ def main() -> None:
     plt.show()
 
 
+def calculate() -> None:
+    spike_rate = 0.001
+    period = 1 / spike_rate
+
+    pre_post_delay_min = -100
+    pre_post_delay_max = 100.1
+    pre_post_delay_step = 5
+
+    tau_pre_trace = 20
+    tau_post_trace_update_at_pre = 20
+    tau_post_trace_update_at_post = 40
+
+    pre_post_delay = np.arange(
+        pre_post_delay_min, pre_post_delay_max, pre_post_delay_step
+    )
+
+    post = (
+        0.01
+        * np.exp(-period / tau_post_trace_update_at_post)
+        * (
+            (np.exp(-pre_post_delay / tau_pre_trace)) * (pre_post_delay >= 0)
+            + (
+                np.exp(-(period + pre_post_delay) / tau_pre_trace)
+                * (pre_post_delay < 0)
+            )
+        )
+    )
+    pre = -0.0001 * (
+        np.exp(-(period - pre_post_delay) / tau_post_trace_update_at_pre)
+        * (pre_post_delay >= 0)
+        + np.exp(pre_post_delay / tau_post_trace_update_at_pre) * (pre_post_delay < 0)
+    )
+
+    plt.plot(pre_post_delay, pre + post)
+    plt.show()
+
+
 if __name__ == "__main__":
-    fire.Fire(main)
+    """
+    python -m scripts.bench_stdp simulate
+    python -m scripts.bench_stdp calculate
+    """
+    fire.Fire({"simulate": simulate, "calculate": calculate})

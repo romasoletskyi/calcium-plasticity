@@ -2,12 +2,27 @@ from dataclasses import dataclass
 
 
 @dataclass
+class ThresholdAdaptationArgs:
+    # threshold decay time (ms)
+    tau_theta: float
+
+    # threshold increase when spiking (mV)
+    theta_spike: float
+
+    # threshold starting value when training (mV)
+    theta_init: float
+
+
+@dataclass
 class NeuronArgs:
     # resting potential (mV)
     v_rest: float
 
-    # reset potential (mV)
+    # reset potential after spike (mV)
     v_reset: float
+
+    # threshold potential for spike (mV)
+    v_threshold: float
 
     # membrane potential relaxation time (ms)
     tau_membrane: float
@@ -20,22 +35,42 @@ class NeuronArgs:
     tau_g_exc: float
     tau_g_inh: float
 
-    # firing threshold shift (mV)
-    theta_shift: float
+    # Chapter 1.4.1 of Neuronal Dynamics (Gerstner et al.)
+    threshold_adaptation: ThresholdAdaptationArgs | None
 
-    # firing threshold decay time (ms)
-    tau_theta: float
-
-    # firing threshold increase when spiking (mV)
-    theta_spike: float
-
-    # potential/timer refractory time (ms)
+    # potential refractory time (ms)
     v_refractory: float
+
+    # spiking refractory time (ms)
     timer_refractory: float | None
 
     @property
     def spike_refractory_threshold(self) -> float:
         return max(self.v_refractory, self.timer_refractory or 0.0)
+
+
+@dataclass
+class WeightArgs:
+    # strength of exc -> inh and inh -> exc synaptic connection
+    weight_exc_inh: float
+    weight_inh_exc: float
+
+    # initialise weights as ~binomial(proba)
+    weight_inp_exc_init_proba: float | None
+
+    # initialise weights as ~uniform[0, scale]
+    weight_inp_exc_scale: float | None
+
+    def __post_init__(self) -> None:
+        assert (
+            sum(
+                [
+                    self.weight_inp_exc_init_proba is not None,
+                    self.weight_inp_exc_scale is not None,
+                ]
+            )
+            == 1
+        ), "can choose only one init method"
 
 
 @dataclass
@@ -46,20 +81,11 @@ class NetworkArgs:
     # number of exc/inh neurons
     hidden_size: int
 
-    # simulation step time (ms)
-    step_time: float
-
-    # strength of exc -> inh and inh -> exc synaptic connection
-    weight_exc_inh: float
-    weight_inh_exc: float
+    weight: WeightArgs
 
 
 @dataclass
-class EvalArgs:
-    # MNIST test samples
-    num_classes: int
-    num_samples: int
-
+class SampleArgs:
     # stimulation time (ms)
     stimulation_time: float
 
@@ -73,3 +99,12 @@ class EvalArgs:
     # intensity
     starting_intensity: float
     intensity_increase: float
+
+
+@dataclass
+class EvalArgs:
+    # MNIST test samples
+    num_classes: int
+    num_samples: int
+
+    sample: SampleArgs

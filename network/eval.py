@@ -3,18 +3,27 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-from network.args import EvalArgs, NetworkArgs
-from network.brian2 import read_mnist
+from network.args import EvalArgs, SampleArgs
+from network.config import NetworkConfig, SampleConfig
 from network.model import Network, PoissonGroup, build_network
+from network.utils import read_mnist
 from utils import get_run_path
 
 
-def show_sample(args: EvalArgs, network: Network, sample: torch.Tensor) -> torch.Tensor:
+def show_sample(
+    args: SampleArgs,
+    network: Network,
+    sample: torch.Tensor,
+    step_time: float,
+    training: bool,
+) -> torch.Tensor:
     """
     Args:
-        network (Network) : pg_inp -> ng_exc <-> ng_inh
-        sample (torch.Tensor) : flattened image
-        intensity (float) : pixel intensity multiplier
+        args: how sample is shown
+        network: pg_inp -> ng_exc <-> ng_inh
+        sample: flattened image
+        step_time: simulation step time
+        training: if network weights are training
 
     Returns:
         spike_count (torch.Tensor) : number of spikes during stimulation per each neuron in ng_exc
@@ -29,12 +38,12 @@ def show_sample(args: EvalArgs, network: Network, sample: torch.Tensor) -> torch
         network.neurons[0].rate = sample * intensity / 1000
         spike_count = torch.zeros(network.neurons[1].size)
 
-        for _ in range(int(args.stimulation_time // network.args.step_time)):
-            network.step()
+        for _ in range(int(args.stimulation_time // step_time)):
+            network.step(step_time, training)
             spike_count += network.neurons[1].spike_mask
 
-        for _ in range(int(args.rest_time // network.args.step_time)):
-            network.step()
+        for _ in range(int(args.rest_time // step_time)):
+            network.step(step_time, training)
 
         if spike_count.sum() >= args.spike_threshold:
             return spike_count
@@ -49,22 +58,13 @@ def eval(run_name: str) -> None:
     args = EvalArgs(
         num_classes=10,
         num_samples=1000,
-        stimulation_time=350,
-        rest_time=150,
-        spike_threshold=0,
-        starting_intensity=2,
-        intensity_increase=1,
+        sample=SampleConfig["base"],
     )
+    step_time = 0.1
 
     network = build_network(
-        args=NetworkArgs(
-            input_size=784,
-            hidden_size=400,
-            step_time=0.1,
-            weight_exc_inh=10.4,
-            weight_inh_exc=17.0,
-        ),
-        run_path=run_path,
+        args=NetworkConfig["base"],
+        ckpt_path=run_path / "data",
     )
 
     confusion = np.zeros((args.num_classes, args.num_classes))
@@ -76,7 +76,13 @@ def eval(run_name: str) -> None:
     np.random.shuffle(indices)
 
     for idx in tqdm(indices):
-        spike_count = show_sample(args, network, torch.tensor(images[idx]))
+        spike_count = show_sample(
+            args=args.sample,
+            network=network,
+            sample=torch.tensor(images[idx]),
+            step_time=step_time,
+            training=False,
+        )
         guess = np.argmax([spike_count[group].mean().item() for group in groups])
         confusion[labels[idx], guess] += 1
 

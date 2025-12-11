@@ -4,7 +4,6 @@ from collections import defaultdict
 from pathlib import Path
 from random import randrange
 from random import seed as rseed
-from struct import unpack
 
 import fire
 import matplotlib.pyplot as plt
@@ -25,6 +24,7 @@ from brian2 import (
 )
 from tqdm import tqdm
 
+from network.utils import read_mnist
 from utils import get_run_path
 
 # Number of training, observation, and testing samples
@@ -60,27 +60,6 @@ def load_npy(path):
     arr = np.load(path)
     print("%-9s %-30s => %-15s" % ("Loading", path, arr.shape))
     return arr
-
-
-def read_mnist(run_path: Path, training: bool) -> tuple[np.ndarray, np.ndarray]:
-    tag = "train" if training else "t10k"
-    mnist_path = run_path / "MNIST" / "raw"
-
-    images = open(mnist_path / ("%s-images-idx3-ubyte" % tag), "rb")
-    images.read(4)
-    n_images = unpack(">I", images.read(4))[0]
-    n_rows = unpack(">I", images.read(4))[0]
-    n_cols = unpack(">I", images.read(4))[0]
-    assert n_rows == n_cols and n_rows * n_cols == N_INP, (n_rows, n_cols)
-
-    labels = open(mnist_path / ("%s-labels-idx1-ubyte" % tag), "rb")
-    labels.read(4)
-    n_labels = unpack(">I", labels.read(4))[0]
-    assert n_images == n_labels, (n_images, n_labels)
-
-    x = np.frombuffer(images.read(), dtype=np.uint8).reshape(n_images, -1) / 8.0
-    y = np.frombuffer(labels.read(), dtype=np.uint8)
-    return x, y
 
 
 def build_network(data_path: Path, training: bool) -> Network:
