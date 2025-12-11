@@ -39,7 +39,7 @@ def train(run_name: str) -> None:
 
     args = TrainArgs(
         max_steps=40,
-        ckpt_freq=10,
+        ckpt_freq=1,
         network=NetworkConfig["calcium"],
         sample=SampleConfig["base"],
         step_time=0.25,

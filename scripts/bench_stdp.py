@@ -70,7 +70,7 @@ def simulate() -> None:
 
 
 def calculate() -> None:
-    spike_rate = 0.001
+    spike_rate = 0.005
     period = 1 / spike_rate
 
     pre_post_delay_min = -100
