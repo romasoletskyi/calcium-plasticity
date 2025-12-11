@@ -4,8 +4,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from network.args import NetworkArgs, NeuronArgs
-from network.config import NeuronConfig
+from network.args import NetworkArgs, NeuronArgs, SynapseArgs
 
 
 class SpikingGroup(ABC):
@@ -78,15 +77,60 @@ class SynapseGroup:
         post: NeuronGroup,
         exc_weight: torch.Tensor,
         inh_weight: torch.Tensor,
+        args: SynapseArgs | None = None,
+        plastic: bool = False,
     ) -> None:
         self.pre = pre
         self.post = post
         self.exc_weight = exc_weight
         self.inh_weight = inh_weight
 
-    def step(self) -> None:
+        self.args = args
+        self.plastic = plastic
+        self.calcium = torch.zeros_like(self.exc_weight)
+
+    def step(self, step_time: float, training: bool) -> None:
         self.post.g_exc += self.exc_weight @ self.pre.spike_mask.float()
         self.post.g_inh += self.inh_weight @ self.pre.spike_mask.float()
+
+        if self.plastic and training:
+            assert self.args is not None
+            assert isinstance(self.args.synapse.theta_p, (int, float))
+            assert isinstance(self.args.synapse.theta_d, (int, float))
+
+            dcalcium = (
+                -self.calcium * step_time / self.args.calcium.tau_ca
+                + self.args.calcium.c_pre * self.pre.spike_mask[None, :]
+                + self.args.calcium.c_post * self.post.spike_mask[:, None]
+            )
+
+            dexc_weight = (
+                # deterministic part
+                (
+                    -self.exc_weight
+                    * (1 - self.exc_weight)
+                    * (self.args.synapse.rho_star - self.exc_weight)
+                    + self.args.synapse.gamma_p
+                    * (1 - self.exc_weight)
+                    * (self.calcium > self.args.synapse.theta_p)
+                    - self.args.synapse.gamma_d
+                    * self.exc_weight
+                    * (self.calcium > self.args.synapse.theta_d)
+                )
+                * (step_time / self.args.synapse.tau)
+            ) + (
+                # noise part
+                self.args.synapse.sigma
+                * torch.normal(0, 1, size=self.exc_weight.shape)
+                * (
+                    self.calcium
+                    > min(self.args.synapse.theta_p, self.args.synapse.theta_d)
+                )
+                * (step_time / self.args.synapse.tau) ** (1 / 2)
+            )
+
+            self.calcium += dcalcium
+            self.exc_weight += dexc_weight
 
 
 class Network:
@@ -105,7 +149,7 @@ class Network:
             neurons.step(step_time, training)
 
         for synapses in self.synapses:
-            synapses.step()
+            synapses.step(step_time, training)
 
 
 def build_network(args: NetworkArgs, ckpt_path: Path | None = None) -> Network:
@@ -116,23 +160,21 @@ def build_network(args: NetworkArgs, ckpt_path: Path | None = None) -> Network:
         rate=torch.zeros(args.input_size),
     )
 
-    # TODO: @roman move neuron configs to network args
-    ng_exc_config = NeuronConfig["EXC"]
     if ckpt_path is not None:
         # theta is stored in volts - TODO: @roman refactor brian2 script to avoid this
         theta = torch.tensor(1000 * np.load(ckpt_path / "theta.npy"), dtype=torch.float)
     else:
-        assert ng_exc_config.threshold_adaptation is not None
-        theta = ng_exc_config.threshold_adaptation.theta_init * torch.ones(size)
+        assert args.exc_neuron.threshold_adaptation is not None
+        theta = args.exc_neuron.threshold_adaptation.theta_init * torch.ones(size)
 
     ng_exc = NeuronGroup(
-        ng_exc_config,
+        args.exc_neuron,
         size=size,
         theta=theta,
     )
 
     ng_inh = NeuronGroup(
-        NeuronConfig["INH"],
+        args.inh_neuron,
         size=size,
         theta=torch.zeros(size),
     )
@@ -161,6 +203,8 @@ def build_network(args: NetworkArgs, ckpt_path: Path | None = None) -> Network:
         post=ng_exc,
         exc_weight=weight,
         inh_weight=torch.zeros(size, args.input_size),
+        args=args.synapse,
+        plastic=True,
     )
     syns_exc_inh = SynapseGroup(
         pre=ng_exc,

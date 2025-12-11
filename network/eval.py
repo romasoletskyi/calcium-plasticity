@@ -1,3 +1,5 @@
+import logging
+
 import fire
 import numpy as np
 import torch
@@ -5,9 +7,11 @@ from tqdm import tqdm
 
 from network.args import EvalArgs, SampleArgs
 from network.config import NetworkConfig, SampleConfig
-from network.model import Network, PoissonGroup, build_network
+from network.model import Network, NeuronGroup, PoissonGroup, build_network
 from network.utils import read_mnist
 from utils import get_run_path
+
+logger = logging.getLogger(__file__)
 
 
 def show_sample(
@@ -16,7 +20,7 @@ def show_sample(
     sample: torch.Tensor,
     step_time: float,
     training: bool,
-) -> torch.Tensor:
+) -> tuple[torch.Tensor, list]:
     """
     Args:
         args: how sample is shown
@@ -31,7 +35,11 @@ def show_sample(
 
     # TODO: @roman how do discern neuron groups? names?
     assert isinstance(network.neurons[0], PoissonGroup)
+    assert isinstance(network.neurons[1], NeuronGroup)
+    assert isinstance(network.neurons[2], NeuronGroup)
     intensity = args.starting_intensity
+
+    voltage: list[tuple[torch.Tensor, torch.Tensor]] = []
 
     while True:
         # time is computed in ms but sample intensity is in Hz
@@ -40,15 +48,23 @@ def show_sample(
 
         for _ in range(int(args.stimulation_time // step_time)):
             network.step(step_time, training)
+            voltage.append((network.neurons[1].voltage, network.neurons[2].voltage))
             spike_count += network.neurons[1].spike_mask
 
         for _ in range(int(args.rest_time // step_time)):
             network.step(step_time, training)
 
+        logger.info(f"Fired neurons {torch.arange(len(spike_count))[spike_count > 0]}")
         if spike_count.sum() >= args.spike_threshold:
-            return spike_count
+            logger.info(
+                f"spike count {spike_count.sum()} >= {args.spike_threshold=} - stop"
+            )
+            return spike_count, voltage
         else:
             intensity += args.intensity_increase
+            logger.info(
+                f"spike count {spike_count.sum()} < {args.spike_threshold=} - retry with {intensity=}"
+            )
 
 
 def eval(run_name: str) -> None:

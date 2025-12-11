@@ -1,7 +1,9 @@
+from config import CalciumConfig, SynapseConfig
 from network.args import (
     NetworkArgs,
     NeuronArgs,
     SampleArgs,
+    SynapseArgs,
     ThresholdAdaptationArgs,
     WeightArgs,
 )
@@ -43,20 +45,39 @@ NetworkConfig: dict[str, NetworkArgs] = {
     "base": NetworkArgs(
         input_size=784,
         hidden_size=400,
+        exc_neuron=NeuronConfig["EXC"],
+        inh_neuron=NeuronConfig["INH"],
+        synapse=None,
         weight=WeightArgs(
             weight_exc_inh=10.4,
             weight_inh_exc=17.0,
             weight_inp_exc_scale=0.3,
             weight_inp_exc_init_proba=None,
         ),
-    )
+    ),
+    "calcium": NetworkArgs(
+        input_size=784,
+        hidden_size=400,
+        exc_neuron=NeuronConfig["EXC"],
+        inh_neuron=NeuronConfig["INH"],
+        synapse=SynapseArgs(
+            calcium=CalciumConfig["DP"],
+            synapse=SynapseConfig["DP"],
+        ),
+        weight=WeightArgs(
+            weight_exc_inh=10.4,
+            weight_inh_exc=17.0,
+            weight_inp_exc_scale=None,
+            weight_inp_exc_init_proba=0.1,
+        ),
+    ),
 }
 
 SampleConfig: dict[str, SampleArgs] = {
     "base": SampleArgs(
         stimulation_time=350,
         rest_time=150,
-        spike_threshold=0,
+        spike_threshold=5,
         starting_intensity=2,
         intensity_increase=1,
     ),

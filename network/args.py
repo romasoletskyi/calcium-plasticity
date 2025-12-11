@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+from args import CalciumArgs, SynapticArgs
+
 
 @dataclass
 class ThresholdAdaptationArgs:
@@ -50,6 +52,12 @@ class NeuronArgs:
 
 
 @dataclass
+class SynapseArgs:
+    calcium: CalciumArgs
+    synapse: SynapticArgs
+
+
+@dataclass
 class WeightArgs:
     # strength of exc -> inh and inh -> exc synaptic connection
     weight_exc_inh: float
@@ -80,6 +88,10 @@ class NetworkArgs:
 
     # number of exc/inh neurons
     hidden_size: int
+
+    exc_neuron: NeuronArgs
+    inh_neuron: NeuronArgs
+    synapse: SynapseArgs | None
 
     weight: WeightArgs
 
